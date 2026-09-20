@@ -3,7 +3,7 @@ import Tag from '../../../components/common/Tag.jsx'
 import { DATA_SOURCE_TONE } from '../../../constants/index.js'
 import { formatDateTime, formatNumber, formatRatio } from '../../../utils/format.js'
 
-export default function MeasurementTable({ rows, loading, onDelete }) {
+export default function MeasurementTable({ rows, loading, onDelete, onShowHistory }) {
   const columns = [
     { key: 'measured_at', title: '监测时间', className: 'cell-nowrap', render: (row) => formatDateTime(row.measured_at) },
     {
@@ -42,6 +42,17 @@ export default function MeasurementTable({ rows, loading, onDelete }) {
         row.is_exceeded ? <Tag tone="danger">{formatRatio(row.exceed_ratio)}</Tag> : <Tag tone="success">达标</Tag>
     },
     {
+      key: 'version',
+      title: '版本',
+      align: 'center',
+      render: (row) =>
+        row.revision_count > 0 ? (
+          <Tag tone="warning">v{row.version} · 改过{row.revision_count}次</Tag>
+        ) : (
+          <Tag tone="neutral">v{row.version || 1}</Tag>
+        )
+    },
+    {
       key: 'data_source_label',
       title: '来源',
       render: (row) => <Tag tone={DATA_SOURCE_TONE[row.data_source]}>{row.data_source_label}</Tag>
@@ -52,9 +63,14 @@ export default function MeasurementTable({ rows, loading, onDelete }) {
       title: '操作',
       align: 'right',
       render: (row) => (
-        <button type="button" className="btn btn-sm btn-danger" onClick={() => onDelete(row)}>
-          删除
-        </button>
+        <div className="inline" style={{ gap: 6 }}>
+          <button type="button" className="btn btn-sm" onClick={() => onShowHistory(row)}>
+            版本
+          </button>
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => onDelete(row)}>
+            删除
+          </button>
+        </div>
       )
     }
   ]

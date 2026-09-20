@@ -7,17 +7,20 @@ from .extensions import db
 class ApiError(Exception):
     """Business level error rendered as a JSON payload."""
 
-    def __init__(self, message, status_code=400, code="BAD_REQUEST", fields=None):
+    def __init__(self, message, status_code=400, code="BAD_REQUEST", fields=None, details=None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
         self.code = code
         self.fields = fields or {}
+        self.details = details or {}
 
     def to_dict(self):
         payload = {"message": self.message, "code": self.code}
         if self.fields:
             payload["fields"] = self.fields
+        if self.details:
+            payload["details"] = self.details
         return payload
 
 
@@ -32,8 +35,8 @@ class ValidationError(ApiError):
 
 
 class ConflictError(ApiError):
-    def __init__(self, message="数据冲突"):
-        super().__init__(message, status_code=409, code="CONFLICT")
+    def __init__(self, message="数据冲突", details=None):
+        super().__init__(message, status_code=409, code="CONFLICT", details=details)
 
 
 def register_error_handlers(app):

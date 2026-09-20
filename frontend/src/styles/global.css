@@ -280,6 +280,22 @@ ul.plain li { margin-bottom: 5px; }
 .kv dt { color: var(--text-muted); }
 .kv dd { margin: 0; }
 
+.data-table tr.muted-row { opacity: 0.55; }
+.data-table tr.muted-row:hover { opacity: 0.8; }
+
+.timeline { position: relative; padding-left: 6px; }
+.timeline-item { position: relative; padding: 0 0 14px 52px; }
+.timeline-item::before {
+  content: ""; position: absolute; left: 22px; top: 6px; bottom: -2px;
+  width: 2px; background: var(--border-strong);
+}
+.timeline-item:last-child::before { display: none; }
+.timeline-dot {
+  position: absolute; left: 0; top: 4px; width: 44px; text-align: right;
+  font-size: 11px; font-weight: 700; color: var(--primary);
+}
+.timeline-content { position: relative; }
+
 @media (max-width: 900px) {
   .app { flex-direction: column; }
   .sidebar { width: 100%; flex: none; flex-direction: row; overflow-x: auto; align-items: center; padding: 10px; }

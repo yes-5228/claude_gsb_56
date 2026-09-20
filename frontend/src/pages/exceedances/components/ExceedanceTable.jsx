@@ -51,7 +51,14 @@ export default function ExceedanceTable({
     {
       key: 'status',
       title: '标注状态',
-      render: (row) => <Tag tone={EXCEEDANCE_STATUS_TONE[row.status]}>{row.status_label}</Tag>
+      render: (row) => (
+        <div className="stack" style={{ gap: 4 }}>
+          <Tag tone={EXCEEDANCE_STATUS_TONE[row.status]}>{row.status_label}</Tag>
+          {row.regenerated ? (
+            <Tag tone="info">覆盖重判 · v{row.source_version?.version ?? '-'}</Tag>
+          ) : null}
+        </div>
+      )
     },
     {
       key: 'note',

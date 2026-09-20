@@ -162,9 +162,55 @@ export default function EntryResultPanel({ result, summary, onClose }) {
 
         {payload.duplicates?.length ? (
           <Alert tone="warning">
-            以下因子在该时刻已存在数据, 未写入: {payload.duplicates.map((item) => item.pollutant_label).join(', ')}
-            。如需修正请勾选“覆盖同一时刻已有数据”后重新提交。
+            以下因子在该时刻已存在数据, 已跳过保留原值: {payload.duplicates.map((item) => item.pollutant_label).join(', ')}
           </Alert>
+        ) : null}
+
+        {payload.conclusion_changes?.length ? (
+          <div className="stack">
+            <Alert tone="warning">
+              本次覆盖中有 {payload.summary?.conclusion_changed_count ?? payload.conclusion_changes.length} 项超标结论发生变化, 均已按新值重新判定; 原有标注不再沿用。
+            </Alert>
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>因子</th>
+                    <th>原值 → 新值</th>
+                    <th>结论变化</th>
+                    <th>覆盖操作人</th>
+                    <th>覆盖原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payload.conclusion_changes.map((change) => (
+                    <tr key={change.pollutant}>
+                      <td>{change.pollutant_label}</td>
+                      <td className="cell-nowrap">
+                        <span className="muted">{formatNumber(change.old_value)}</span>
+                        {' → '}
+                        <span className="strong">{formatNumber(change.new_value)}</span>
+                      </td>
+                      <td>
+                        <Tag tone={change.conclusion_change === 'exceeded_to_normal' ? 'success' : 'danger'}>
+                          {change.conclusion_change === 'exceeded_to_normal'
+                            ? '超标撤销'
+                            : change.conclusion_change === 'normal_to_exceeded'
+                              ? '新增超标'
+                              : '超标程度变化'}
+                        </Tag>
+                        {change.annotation_reset ? (
+                          <div className="small muted">原确认/忽略标注已重置为待标注</div>
+                        ) : null}
+                      </td>
+                      <td>{change.operator}</td>
+                      <td style={{ maxWidth: 260 }}>{change.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         ) : null}
 
         {payload.exceedances?.length ? (

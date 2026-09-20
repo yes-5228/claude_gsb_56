@@ -8,9 +8,11 @@ from .models import Exceedance, Measurement, Station
 def register_commands(app):
     @app.cli.command("init-db")
     def init_db():
-        """Create database tables."""
-        db.create_all()
-        click.echo("数据库表已创建")
+        """Create database tables (and apply additive upgrades on existing DBs)."""
+        from .migrations import ensure_schema
+
+        ensure_schema()
+        click.echo("数据库表已创建/升级")
 
     @app.cli.command("seed")
     @click.option("--days", default=5, show_default=True, help="生成最近多少天的数据")

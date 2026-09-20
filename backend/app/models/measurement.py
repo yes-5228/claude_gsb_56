@@ -29,6 +29,8 @@ class Measurement(TimestampMixin, db.Model):
     data_source = db.Column(db.String(16), nullable=False, default="manual")
     recorder = db.Column(db.String(64))
     remark = db.Column(db.Text)
+    # 乐观锁版本号: 每次覆盖 +1, 并发覆盖时用于保证只有一方生效
+    version = db.Column(db.Integer, nullable=False, default=1)
 
     station = db.relationship("Station", back_populates="measurements")
     exceedance = db.relationship(
@@ -37,6 +39,14 @@ class Measurement(TimestampMixin, db.Model):
         uselist=False,
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    versions = db.relationship(
+        "MeasurementVersion",
+        back_populates="measurement",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="MeasurementVersion.version.desc()",
+        lazy="dynamic",
     )
 
     def pollutant_label(self):
@@ -63,6 +73,8 @@ class Measurement(TimestampMixin, db.Model):
             "remark": self.remark,
             "created_at": iso(self.created_at),
             "updated_at": iso(self.updated_at),
+            "version": self.version,
+            "revision_count": max(0, (self.version or 1) - 1),
             "exceedance_id": self.exceedance.id if self.exceedance else None,
             "exceedance_status": self.exceedance.status if self.exceedance else None,
         }

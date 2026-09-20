@@ -118,6 +118,15 @@ export default function AnnotationModal({ exceedanceId, onClose, onSaved }) {
             </dd>
           </dl>
 
+          {data.regenerated && data.source_version ? (
+            <Alert tone="info">
+              该超标单是 <strong>{formatDateTime(data.source_version.operated_at)}</strong> 一次覆盖
+              (v{data.source_version.version}, 操作人 {data.source_version.operator || '-'})
+              后按新值重新判定生成的, 此前的超标结论与标注已作废、不沿用, 请重新复核。
+              {data.source_version.reason ? ` 覆盖原因: ${data.source_version.reason}` : ''}
+            </Alert>
+          ) : null}
+
           {message ? <Alert tone="error">{message}</Alert> : null}
 
           <Field label="标注结论" required error={errors.status}>

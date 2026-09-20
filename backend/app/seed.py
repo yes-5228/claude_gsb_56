@@ -161,7 +161,9 @@ def ensure_bootstrap(app):
     with app.app_context():
         try:
             if auto_init:
-                db.create_all()
+                from .migrations import ensure_schema
+
+                ensure_schema()
             if auto_seed and db.session.query(Station.id).first() is None:
                 app.logger.info("seeding demo data ...")
                 seed_demo_data()

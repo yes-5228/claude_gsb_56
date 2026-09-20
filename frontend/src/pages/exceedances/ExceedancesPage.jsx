@@ -7,9 +7,11 @@ import Tag from '../../components/common/Tag.jsx'
 import { useToast } from '../../components/common/ToastProvider.jsx'
 import { useListQuery } from '../../hooks/useListQuery.js'
 import AnnotationModal from './components/AnnotationModal.jsx'
+import ConclusionChangePanel from './components/ConclusionChangePanel.jsx'
 import ExceedanceFilters from './components/ExceedanceFilters.jsx'
 import ExceedanceSummaryCards from './components/ExceedanceSummaryCards.jsx'
 import ExceedanceTable from './components/ExceedanceTable.jsx'
+import VersionHistoryDrawer from '../measurements/components/VersionHistoryDrawer.jsx'
 
 const INITIAL_FILTERS = {
   status: '',
@@ -28,6 +30,7 @@ export default function ExceedancesPage() {
   const [activeId, setActiveId] = useState(null)
   const [batch, setBatch] = useState({ status: 'confirmed', note: '', annotator: '' })
   const [busy, setBusy] = useState(false)
+  const [historyId, setHistoryId] = useState(null)
 
   const { reload } = query
 
@@ -169,6 +172,9 @@ export default function ExceedancesPage() {
           reload()
         }}
       />
+
+      <ConclusionChangePanel onShowMeasurement={(id) => setHistoryId(id)} />
+      <VersionHistoryDrawer measurementId={historyId} onClose={() => setHistoryId(null)} />
     </>
   )
 }

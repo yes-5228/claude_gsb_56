@@ -16,6 +16,7 @@ import EntryForm from './components/EntryForm.jsx'
 import EntryResultPanel from './components/EntryResultPanel.jsx'
 import MeasurementFilters from './components/MeasurementFilters.jsx'
 import MeasurementTable from './components/MeasurementTable.jsx'
+import VersionHistoryDrawer from './components/VersionHistoryDrawer.jsx'
 
 const INITIAL_FILTERS = {
   station_id: '',
@@ -31,6 +32,7 @@ export default function MeasurementsPage() {
   const query = useListQuery(listMeasurements, INITIAL_FILTERS)
   const [result, setResult] = useState(null)
   const [pendingDelete, setPendingDelete] = useState(null)
+  const [historyId, setHistoryId] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [exporting, setExporting] = useState(false)
 
@@ -107,6 +109,7 @@ export default function MeasurementsPage() {
           rows={query.items}
           loading={query.loading}
           onDelete={(row) => setPendingDelete(row)}
+          onShowHistory={(row) => setHistoryId(row.id)}
         />
         <Pagination
           page={query.page}
@@ -129,6 +132,8 @@ export default function MeasurementsPage() {
         onConfirm={handleDelete}
         onCancel={() => setPendingDelete(null)}
       />
+
+      <VersionHistoryDrawer measurementId={historyId} onClose={() => setHistoryId(null)} />
     </>
   )
 }

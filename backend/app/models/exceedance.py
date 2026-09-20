@@ -34,8 +34,18 @@ class Exceedance(TimestampMixin, db.Model):
     annotated_at = db.Column(db.DateTime)
     measured_at = db.Column(db.DateTime, nullable=False, index=True)
 
+    # 结论来源: 该超标单(重新)生成时对应的监测数据版本;
+    # 覆盖导致结论重算后, 指向最近一次覆盖版本, 旧标注不再沿用。
+    source_version_id = db.Column(
+        db.Integer,
+        db.ForeignKey("measurement_versions.id", ondelete="SET NULL"),
+    )
+    # True 表示本单是覆盖重算后重新生成的(历史上曾有被覆盖掉的旧结论)
+    regenerated = db.Column(db.Boolean, nullable=False, default=False)
+
     measurement = db.relationship("Measurement", back_populates="exceedance")
     station = db.relationship("Station", back_populates="exceedances")
+    source_version = db.relationship("MeasurementVersion", foreign_keys=[source_version_id])
 
     def to_dict(self, include_relations=False):
         payload = {
@@ -62,10 +72,25 @@ class Exceedance(TimestampMixin, db.Model):
             "station_name": self.station.name if self.station else None,
             "station_code": self.station.code if self.station else None,
             "unit": self.measurement.unit if self.measurement else None,
+            "regenerated": bool(self.regenerated),
+            "source_version": self._source_version_payload(),
         }
         if include_relations and self.measurement:
             payload["measurement"] = self.measurement.to_dict(include_station=True)
         return payload
+
+    def _source_version_payload(self):
+        version = self.source_version
+        if version is None:
+            return None
+        return {
+            "id": version.id,
+            "version": version.version,
+            "operator": version.operator,
+            "reason": version.reason,
+            "operated_at": iso(version.operated_at),
+            "conclusion_change": version.conclusion_change,
+        }
 
     def __repr__(self):
         return "<Exceedance %s %s %.2f>" % (self.station_id, self.pollutant, self.value)

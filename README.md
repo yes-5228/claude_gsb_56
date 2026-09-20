@@ -10,8 +10,8 @@
 | --- | --- | --- |
 | 运行概览 | `/overview` | 监测点规模、数据总量、超标与待标注统计、近 7 日数据量趋势、待办超标列表 |
 | 监测点台账 | `/stations` | 台账增删改查、区域/类型/状态筛选、点位详情与分因子统计、级联清理关联数据 |
-| 监测数据录入 | `/measurements` | 按“监测点 + 时刻 + 周期”成组录入多因子浓度、超标校验预览、重复数据覆盖、录入结果回执 |
-| 超标记录标注 | `/exceedances` | 超标自动建单、单条/批量标注(确认 / 忽略 / 重置)、等级人工修正、标注留痕与统计 |
+| 监测数据录入 | `/measurements` | 按“监测点 + 时刻 + 周期”成组录入多因子浓度、超标校验预览、新旧值差异比对、逐项跳过/覆盖(含操作人与原因)、乐观锁防并发双写、版本历史回看、录入结果回执 |
+| 超标记录标注 | `/exceedances` | 超标自动建单、覆盖后按新值重判(旧标注归档不沿用)、单条/批量标注(确认 / 忽略 / 重置)、等级人工修正、标注留痕、覆盖致结论变更追溯与统计 |
 | 数据查询 | `/query` | 多条件组合检索、聚合统计(按因子/站点/区域/日/月等)、分页浏览、CSV 导出 |
 
 设计要点:
@@ -28,7 +28,7 @@
 | 数据库 | SQLite(默认, 零依赖) / PostgreSQL 16(可选, compose 覆盖文件) |
 | 前端 | React 18 · React Router 6 · Vite 7 · Axios · 原生 CSS(设计令牌 + 组件类) |
 | 部署 | Docker 多阶段构建 · Nginx 静态托管与 `/api` 反向代理 · docker compose |
-| 测试 | Pytest(43 个后端用例: 接口 + 领域规则) |
+| 测试 | Pytest(51 个后端用例: 接口 + 领域规则) |
 
 ## 目录结构
 
@@ -141,6 +141,19 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 - **无 1 小时限值的因子**(PM2.5、PM10 小时值)仅记录数值, 不参与超标判定, 避免误报。
 - **标注状态**: `待标注(pending)` 由系统自动创建, 人工标注为 `已确认(confirmed)` 或 `已忽略(ignored)`; 确认与忽略都必须填写标注说明, 用于后续追溯。
 
+## 重复数据比对与覆盖审计
+
+同一监测点、同一时刻、同一周期、同一因子的数据已存在时, 系统不会静默覆盖:
+
+1. **差异对比**: 提交前先调 `/conflicts`, 页面逐项展示「原数值 → 新数值」(绝对差/百分比)、原超标结论与标注、按新值重判的结论及变化类型(超标撤销 / 新增超标 / 超标程度变化 / 结论不变)。
+2. **跳过或覆盖**: 录入人逐项勾选; 未勾选项跳过、保留原值。覆盖必须填写**操作人**与**覆盖原因**, 并携带预检得到的 `base_version`。
+3. **结论按新值重判**: 覆盖后超标记录按新值重新计算并重建为 `待标注`, **不沿用**旧的超标结论、等级与确认/忽略标注; 新值达标则超标单撤销。旧结论与旧标注随覆盖版本归档。
+4. **并发只生效一次**: `measurements.version` 为乐观锁, 覆盖采用 `WHERE version = base_version` 的条件更新。两人基于同一版本同时覆盖, 只有一人成功, 另一侧收到 `409 version_conflict`, 需刷新差异后重新选择。
+5. **版本可回看**: 每次新增/覆盖都在 `measurement_versions` 留下不可变快照(数值、限值、倍数、等级、操作人、原因、原值与旧标注)。`GET /measurements/{id}/versions` 提供按时间排列的版本时间线。
+6. **结论变更可归因**: 超标单上的 `regenerated` 与 `source_version` 指出生成它的那一次覆盖; `/measurements/conclusion-changes?confirmed_only=true` 列出「哪一次覆盖、由谁、因为什么原因」改变了已经确认/忽略过的标注。
+
+> 旧库升级: 启动或 `flask init-db` 时 `app/migrations.py` 会幂等地为旧表补 `version` / `regenerated` / `source_version_id` 列并创建 `measurement_versions` 表, 历史数据回填为第 1 版, 无需手工迁移。
+
 ## API 概览
 
 统一前缀 `/api`, 成功直接返回数据对象; 失败返回 `{"error": {"code": "...", "message": "...", "fields": {...}}}`。
@@ -158,6 +171,9 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 | GET | `/api/measurements` | 监测数据分页查询(含筛选汇总) |
 | POST | `/api/measurements/entries` | **成组录入**: 一个监测点 + 一个时刻 + 多个因子 |
 | POST | `/api/measurements/preview` | 超标校验预览(不写库) |
+| POST | `/api/measurements/conflicts` | **重复预检**: 返回同一时刻已存在数据的新旧值差异、重判结论与版本号 |
+| GET | `/api/measurements/{id}/versions` | **版本回看**: 该监测数据首次录入与历次覆盖的快照时间线 |
+| GET | `/api/measurements/conclusion-changes` | 覆盖导致超标结论变化的事件(可只看影响了确认/忽略标注的) |
 | DELETE | `/api/measurements/{id}` | 删除监测数据 |
 | GET | `/api/measurements/export` | 按条件导出 CSV |
 | GET | `/api/exceedances` | 超标记录查询(含筛选统计) |
@@ -205,8 +221,9 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `stations` | `code`(唯一) `name` `area` `station_type` `status` `longitude/latitude` `installed_at` | 监测点台账 |
-| `measurements` | `station_id` `pollutant` `period` `value` `limit_value` `exceed_ratio` `is_exceeded` `measured_at` `data_source` `recorder` | 监测数据; `(station_id, pollutant, period, measured_at)` 唯一 |
-| `exceedances` | `measurement_id`(唯一) `status` `level` `note` `annotator` `annotated_at` | 超标记录与人工标注 |
+| `measurements` | `station_id` `pollutant` `period` `value` `limit_value` `exceed_ratio` `is_exceeded` `measured_at` `data_source` `recorder` `version` | 监测数据; `(station_id, pollutant, period, measured_at)` 唯一; `version` 为乐观锁 |
+| `measurement_versions` | `measurement_id` `version` `action` `value` `...` `operator` `reason` `previous_*` `conclusion_change` | 每次新增/覆盖的不可变快照与覆盖审计 |
+| `exceedances` | `measurement_id`(唯一) `status` `level` `note` `annotator` `annotated_at` `regenerated` `source_version_id` | 超标记录与人工标注; 覆盖重判后指向来源版本 |
 
 删除监测点会级联清理其监测数据与超标记录; 删除监测数据会同时删除对应超标记录。
 
@@ -228,7 +245,7 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 
 ```bash
 cd backend
-python -m pytest -q          # 43 个用例: 台账 CRUD/级联、录入与超标判定、标注规则、查询统计与导出、元数据接口
+python -m pytest -q          # 51 个用例: 台账 CRUD/级联、录入与超标判定、标注规则、查询统计与导出、元数据接口
 
 cd frontend
 npm run build                # 生产构建校验
