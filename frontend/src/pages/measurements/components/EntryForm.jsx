@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createEntries, previewEntries } from '../../../api/measurements.js'
 import { SectionCard } from '../../../components/common/Card.jsx'
-import { Checkbox, Field, Input, Select } from '../../../components/common/FormField.jsx'
+import { Field, Input, Select } from '../../../components/common/FormField.jsx'
 import { Alert, Loading } from '../../../components/common/Feedback.jsx'
 import Tag from '../../../components/common/Tag.jsx'
 import { useToast } from '../../../components/common/ToastProvider.jsx'
 import { usePollutantMeta, useStationOptions } from '../../../hooks/useOptions.js'
 import { formatNumber, toDateTimeInput } from '../../../utils/format.js'
+import OverwriteDialog from './OverwriteDialog.jsx'
 
 const PERIODS = [
   { value: 'hourly', label: '小时均值' },
@@ -30,14 +31,14 @@ export default function EntryForm({ onPreview, onSubmitted }) {
     period: 'hourly',
     data_source: 'manual',
     recorder: '',
-    remark: '',
-    overwrite: false
+    remark: ''
   })
   const [values, setValues] = useState({})
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(null)
   const [evaluations, setEvaluations] = useState({})
+  const [conflict, setConflict] = useState(null)
 
   const pollutants = pollutantData?.items ?? []
 
@@ -70,8 +71,7 @@ export default function EntryForm({ onPreview, onSubmitted }) {
   )
 
   const setField = (key) => (event) => {
-    const value = key === 'overwrite' ? event.target.checked : event.target.value
-    setForm((prev) => ({ ...prev, [key]: value }))
+    setForm((prev) => ({ ...prev, [key]: event.target.value }))
     setErrors((prev) => ({ ...prev, [key]: undefined }))
   }
 
@@ -125,6 +125,20 @@ export default function EntryForm({ onPreview, onSubmitted }) {
     }
   }
 
+  const openConflict = (duplicates) => {
+    setConflict({
+      duplicates,
+      context: {
+        station_id: Number(form.station_id),
+        measured_at: form.measured_at,
+        period: form.period,
+        data_source: form.data_source,
+        recorder: form.recorder || '',
+        remark: form.remark || ''
+      }
+    })
+  }
+
   const submit = async () => {
     if (!validate()) return
     setBusy('submit')
@@ -136,7 +150,7 @@ export default function EntryForm({ onPreview, onSubmitted }) {
         data_source: form.data_source,
         recorder: form.recorder || null,
         remark: form.remark || null,
-        overwrite: form.overwrite,
+        overwrite: false,
         entries
       })
       const map = {}
@@ -144,18 +158,29 @@ export default function EntryForm({ onPreview, onSubmitted }) {
         map[item.pollutant] = item
       })
       setEvaluations(map)
-      setValues({})
       onSubmitted?.(result)
       const written = result.summary.created_count + result.summary.updated_count
-      if (result.summary.exceeded_count > 0) {
+      if (result.summary.duplicate_count > 0) {
+        // 有重复数据: 弹出新旧差异对比, 由录入人选择跳过或覆盖
+        openConflict(result.duplicates)
+        toast.warning(`已写入 ${written} 条, ${result.summary.duplicate_count} 个因子与已有数据重复, 请核对差异`)
+      } else if (result.summary.exceeded_count > 0) {
+        setValues({})
         toast.warning(`写入 ${written} 条数据, 其中 ${result.summary.exceeded_count} 项超标已生成待标注记录`)
       } else {
+        setValues({})
         toast.success(`录入成功, 共写入 ${written} 条数据`)
       }
     } catch (error) {
-      setErrors(error.fields || {})
-      setMessage(error.message)
-      toast.error(error.message)
+      if (error.code === 'CONFLICT' && error.payload?.duplicates?.length) {
+        // 全部因子均重复: 后端返回 409 + 新旧差异载荷
+        openConflict(error.payload.duplicates)
+        toast.warning('所填因子在该时刻均已存在, 请核对差异后选择跳过或覆盖')
+      } else {
+        setErrors(error.fields || {})
+        setMessage(error.message)
+        toast.error(error.message)
+      }
     } finally {
       setBusy(null)
     }
@@ -253,17 +278,6 @@ export default function EntryForm({ onPreview, onSubmitted }) {
           </div>
         </div>
 
-        <div>
-          <Checkbox
-            label="覆盖同一时刻已有数据"
-            checked={form.overwrite}
-            onChange={setField('overwrite')}
-          />
-          <div className="small muted" style={{ marginTop: 4 }}>
-            勾选后重复提交将更新原记录并重新判定超标
-          </div>
-        </div>
-
         <div className="inline">
           <button type="button" className="btn" onClick={runPreview} disabled={busy !== null}>
             {busy === 'preview' ? '校验中...' : '超标校验预览'}
@@ -275,7 +289,19 @@ export default function EntryForm({ onPreview, onSubmitted }) {
             已填写 {filled.length} / {pollutants.length} 个因子
           </span>
         </div>
+        <div className="small muted">
+          若同一时刻同一因子已有数据, 提交后会展示新旧差异对比, 可选择跳过或覆盖
+        </div>
       </div>
+
+      <OverwriteDialog
+        conflict={conflict}
+        onClose={() => setConflict(null)}
+        onSubmitted={(result) => {
+          setValues({})
+          onSubmitted?.(result)
+        }}
+      />
     </SectionCard>
   )
 }

@@ -33,9 +33,14 @@ class Exceedance(TimestampMixin, db.Model):
     annotator = db.Column(db.String(64))
     annotated_at = db.Column(db.DateTime)
     measured_at = db.Column(db.DateTime, nullable=False, index=True)
+    # 指向导致本次标注被重置的那一次数据覆盖 (重算溯源)
+    reset_by_revision_id = db.Column(
+        db.Integer, db.ForeignKey("measurement_revisions.id", ondelete="SET NULL"), nullable=True
+    )
 
     measurement = db.relationship("Measurement", back_populates="exceedance")
     station = db.relationship("Station", back_populates="exceedances")
+    reset_by_revision = db.relationship("MeasurementRevision")
 
     def to_dict(self, include_relations=False):
         payload = {
@@ -62,10 +67,35 @@ class Exceedance(TimestampMixin, db.Model):
             "station_name": self.station.name if self.station else None,
             "station_code": self.station.code if self.station else None,
             "unit": self.measurement.unit if self.measurement else None,
+            "reset_by_revision": self._reset_by_revision_payload(),
         }
         if include_relations and self.measurement:
             payload["measurement"] = self.measurement.to_dict(include_station=True)
         return payload
+
+    def _reset_by_revision_payload(self):
+        """摘要信息: 哪一次覆盖把已标注结论重置回待标注."""
+        revision = self.reset_by_revision
+        if revision is None:
+            return None
+        return {
+            "id": revision.id,
+            "version": revision.version,
+            "operator": revision.operator,
+            "reason": revision.reason,
+            "created_at": iso(revision.created_at),
+            "old_value": revision.old_value,
+            "new_value": revision.new_value,
+            "unit": revision.unit,
+            "prev_annotation_status": revision.prev_annotation_status,
+            "prev_annotation_status_label": label_of(
+                EXCEEDANCE_STATUS_LABELS, revision.prev_annotation_status
+            )
+            if revision.prev_annotation_status
+            else None,
+            "prev_annotator": revision.prev_annotator,
+            "prev_note": revision.prev_note,
+        }
 
     def __repr__(self):
         return "<Exceedance %s %s %.2f>" % (self.station_id, self.pollutant, self.value)

@@ -118,6 +118,22 @@ export default function AnnotationModal({ exceedanceId, onClose, onSaved }) {
             </dd>
           </dl>
 
+          {data.reset_by_revision ? (
+            <Alert tone="warning">
+              该记录因第 {data.reset_by_revision.version} 次数据覆盖按新数值重新判定
+              （{formatNumber(data.reset_by_revision.old_value)} →{' '}
+              {formatNumber(data.reset_by_revision.new_value)} {data.reset_by_revision.unit || ''}
+              ），原标注「{data.reset_by_revision.prev_annotation_status_label || '未知'} ·{' '}
+              {data.reset_by_revision.prev_annotator || '未署名'}
+              {data.reset_by_revision.prev_note
+                ? `：${data.reset_by_revision.prev_note}`
+                : ''}
+              」已作废。覆盖人 {data.reset_by_revision.operator} ·{' '}
+              {formatDateTime(data.reset_by_revision.created_at)} · 原因：
+              {data.reset_by_revision.reason}
+            </Alert>
+          ) : null}
+
           {message ? <Alert tone="error">{message}</Alert> : null}
 
           <Field label="标注结论" required error={errors.status}>

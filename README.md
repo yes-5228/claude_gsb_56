@@ -10,13 +10,15 @@
 | --- | --- | --- |
 | 运行概览 | `/overview` | 监测点规模、数据总量、超标与待标注统计、近 7 日数据量趋势、待办超标列表 |
 | 监测点台账 | `/stations` | 台账增删改查、区域/类型/状态筛选、点位详情与分因子统计、级联清理关联数据 |
-| 监测数据录入 | `/measurements` | 按“监测点 + 时刻 + 周期”成组录入多因子浓度、超标校验预览、重复数据覆盖、录入结果回执 |
+| 监测数据录入 | `/measurements` | 按“监测点 + 时刻 + 周期”成组录入多因子浓度、超标校验预览、重复数据新旧差异对比(逐因子跳过/覆盖)、覆盖留痕与版本回看、录入结果回执 |
 | 超标记录标注 | `/exceedances` | 超标自动建单、单条/批量标注(确认 / 忽略 / 重置)、等级人工修正、标注留痕与统计 |
 | 数据查询 | `/query` | 多条件组合检索、聚合统计(按因子/站点/区域/日/月等)、分页浏览、CSV 导出 |
 
 设计要点:
 
 - **超标自动判定**: 数据写入时即按“因子 + 数据周期”取用限值, 计算超标倍数并分级, 同步生成待标注超标记录; 修正数据后超标记录自动更新或撤销。
+- **覆盖留痕与重算**: 同一时刻同一因子重复录入时, 页面展示新旧数值与判定差异, 由录入人逐条选择跳过或覆盖; 覆盖必须记录操作人与原因, 生成不可变的版本快照(可单条或全局按时间回看)。覆盖后超标结论与标注状态按新数值重新判定: 仍超标则原人工标注重置为待标注并记录“被哪一次覆盖重置”, 不再超标则撤销超标记录、原标注快照保留在版本中。
+- **并发覆盖保护**: 监测数据带版本号, 覆盖需携带期望版本号(乐观锁); 两人同时覆盖同一条记录时只有一人生效, 另一人收到 409 冲突提示并可刷新最新差异。
 - **业务规则集中在后端**: 限值与分级规则位于 `backend/app/domain/`, 前端仅做展示与前置校验, 避免规则分叉。
 - **模块化组织**: 后端按 `api / services / models / domain / utils` 分层; 前端每个业务模块独占目录, 公共能力沉淀在 `components/`、`hooks/`、`api/`。
 
@@ -28,7 +30,7 @@
 | 数据库 | SQLite(默认, 零依赖) / PostgreSQL 16(可选, compose 覆盖文件) |
 | 前端 | React 18 · React Router 6 · Vite 7 · Axios · 原生 CSS(设计令牌 + 组件类) |
 | 部署 | Docker 多阶段构建 · Nginx 静态托管与 `/api` 反向代理 · docker compose |
-| 测试 | Pytest(43 个后端用例: 接口 + 领域规则) |
+| 测试 | Pytest(55 个后端用例: 接口 + 领域规则 + 覆盖版本与并发冲突) |
 
 ## 目录结构
 
@@ -158,6 +160,8 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 | GET | `/api/measurements` | 监测数据分页查询(含筛选汇总) |
 | POST | `/api/measurements/entries` | **成组录入**: 一个监测点 + 一个时刻 + 多个因子 |
 | POST | `/api/measurements/preview` | 超标校验预览(不写库) |
+| GET | `/api/measurements/revisions` | 覆盖版本全局回看(按覆盖时间倒序, 可过滤) |
+| GET | `/api/measurements/{id}/revisions` | 单条监测数据的覆盖版本历史 |
 | DELETE | `/api/measurements/{id}` | 删除监测数据 |
 | GET | `/api/measurements/export` | 按条件导出 CSV |
 | GET | `/api/exceedances` | 超标记录查询(含筛选统计) |
@@ -179,7 +183,6 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
   "data_source": "manual",
   "recorder": "王敏",
   "remark": "在线设备人工比对",
-  "overwrite": false,
   "entries": [
     { "pollutant": "PM25", "value": 82.5 },
     { "pollutant": "SO2", "value": 640 },
@@ -200,13 +203,34 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 }
 ```
 
+**重复数据与覆盖流程**:
+
+- 同一 `(监测点, 因子, 周期, 时刻)` 已存在时, 重复因子进入 `duplicates`(部分重复返回 201, 全部重复返回 409), 载荷中带新旧数值、判定差异、原记录版本号与录入人, 供页面渲染差异对比。
+- 确认覆盖时以 `overwrite: true` 重新提交, 并必须携带 `recorder`(操作人)与 `overwrite_reason`(覆盖原因); 每个待覆盖因子需带 `expected_version`(差异对比中拿到的 `existing_version`):
+
+```json
+{
+  "station_id": 1,
+  "measured_at": "2026-09-14 10:00",
+  "period": "hourly",
+  "recorder": "王敏",
+  "overwrite": true,
+  "overwrite_reason": "设备校准后复测修正",
+  "entries": [ { "pollutant": "SO2", "value": 620, "expected_version": 1 } ]
+}
+```
+
+- 若他人已先行覆盖(版本号过期), 整个批次返回 `409 VERSION_CONFLICT` 且不落库, 错误载荷 `conflicts` 中带当前版本、当前数值与操作人。
+- 每次“数值发生变化”的覆盖生成一条 `measurement_revisions` 版本记录(新旧值、判定变化、被重置的原标注、操作人、原因、时间), 可通过 `/api/measurements/revisions` 与 `/api/measurements/{id}/revisions` 回看。
+
 ## 数据模型
 
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `stations` | `code`(唯一) `name` `area` `station_type` `status` `longitude/latitude` `installed_at` | 监测点台账 |
-| `measurements` | `station_id` `pollutant` `period` `value` `limit_value` `exceed_ratio` `is_exceeded` `measured_at` `data_source` `recorder` | 监测数据; `(station_id, pollutant, period, measured_at)` 唯一 |
-| `exceedances` | `measurement_id`(唯一) `status` `level` `note` `annotator` `annotated_at` | 超标记录与人工标注 |
+| `measurements` | `station_id` `pollutant` `period` `value` `limit_value` `exceed_ratio` `is_exceeded` `measured_at` `data_source` `recorder` `version` | 监测数据; `(station_id, pollutant, period, measured_at)` 唯一; `version` 为乐观锁版本号 |
+| `measurement_revisions` | `measurement_id` `version` `old_value/new_value` `old/new_is_exceeded` `old/new_level` `prev_annotation_*` `operator` `reason` `created_at` | 覆盖版本快照; `(measurement_id, version)` 唯一 |
+| `exceedances` | `measurement_id`(唯一) `status` `level` `note` `annotator` `annotated_at` `reset_by_revision_id` | 超标记录与人工标注; `reset_by_revision_id` 指向导致标注重置的覆盖版本 |
 
 删除监测点会级联清理其监测数据与超标记录; 删除监测数据会同时删除对应超标记录。
 
@@ -228,7 +252,7 @@ docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d --buil
 
 ```bash
 cd backend
-python -m pytest -q          # 43 个用例: 台账 CRUD/级联、录入与超标判定、标注规则、查询统计与导出、元数据接口
+python -m pytest -q          # 55 个用例: 台账 CRUD/级联、录入与超标判定、覆盖版本留痕与并发冲突、标注规则、查询统计与导出、元数据接口
 
 cd frontend
 npm run build                # 生产构建校验
@@ -246,6 +270,7 @@ python -m flask --app wsgi reset-db   # 重置数据库并重建演示数据
 
 - **端口被占用**: 后端改 `PORT=5001 python run.py`(同时调整 `VITE_PROXY_TARGET`), 或修改 compose 的端口映射。
 - **想清空演示数据**: `python -m flask --app wsgi reset-db --empty`, 或 `docker compose down -v` 后重新启动。
+- **升级后表结构变化**: 项目未引入迁移工具, 新增字段(如 `measurements.version`、`measurement_revisions` 表)后需执行 `python -m flask --app wsgi reset-db` 重建(演示数据会一并重新生成)。
 - **SQLite 文件位置**: 本地开发为 `backend/instance/air_monitor.db`; Docker 部署为数据卷 `air-monitor-data` 中的 `/data/air_monitor.db`。
 - **前端页面 404 / 刷新报错**: Nginx 已配置 SPA 回退(`try_files ... /index.html`), 自定义部署时需保留该配置。
 - **时区**: 系统按“本地墙钟时间”存储与展示监测时间, 部署时请保持后端 `TIMEZONE` 与业务所在地一致。

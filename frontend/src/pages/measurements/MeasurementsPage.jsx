@@ -16,6 +16,8 @@ import EntryForm from './components/EntryForm.jsx'
 import EntryResultPanel from './components/EntryResultPanel.jsx'
 import MeasurementFilters from './components/MeasurementFilters.jsx'
 import MeasurementTable from './components/MeasurementTable.jsx'
+import RevisionHistoryModal from './components/RevisionHistoryModal.jsx'
+import RevisionListPanel from './components/RevisionListPanel.jsx'
 
 const INITIAL_FILTERS = {
   station_id: '',
@@ -33,6 +35,8 @@ export default function MeasurementsPage() {
   const [pendingDelete, setPendingDelete] = useState(null)
   const [deleting, setDeleting] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [revisionTarget, setRevisionTarget] = useState(null)
+  const [listTab, setListTab] = useState('data')
 
   const handleSubmitted = useCallback(
     (payload) => {
@@ -90,33 +94,69 @@ export default function MeasurementsPage() {
       {query.error ? <Alert tone="error">{query.error.message}</Alert> : null}
 
       <SectionCard
-        title="最近录入的数据"
-        hint="按监测时间倒序展示, 便于核对刚提交的记录"
+        title={listTab === 'data' ? '最近录入的数据' : '覆盖版本历史'}
+        hint={
+          listTab === 'data'
+            ? '按监测时间倒序展示, 便于核对刚提交的记录'
+            : '每次覆盖留下的版本快照, 按覆盖时间倒序回看'
+        }
         actions={
           <>
-            <button type="button" className="btn btn-sm" onClick={query.reload} disabled={query.loading}>
-              刷新
-            </button>
-            <button type="button" className="btn btn-sm btn-primary" onClick={handleExport} disabled={exporting}>
-              {exporting ? '导出中...' : '导出 CSV'}
-            </button>
+            <div className="inline" style={{ flexWrap: 'nowrap' }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${listTab === 'data' ? 'btn-primary' : ''}`}
+                onClick={() => setListTab('data')}
+              >
+                数据列表
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${listTab === 'revisions' ? 'btn-primary' : ''}`}
+                onClick={() => setListTab('revisions')}
+              >
+                覆盖历史
+              </button>
+            </div>
+            {listTab === 'data' ? (
+              <>
+                <button type="button" className="btn btn-sm" onClick={query.reload} disabled={query.loading}>
+                  刷新
+                </button>
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleExport} disabled={exporting}>
+                  {exporting ? '导出中...' : '导出 CSV'}
+                </button>
+              </>
+            ) : null}
           </>
         }
       >
-        <MeasurementTable
-          rows={query.items}
-          loading={query.loading}
-          onDelete={(row) => setPendingDelete(row)}
-        />
-        <Pagination
-          page={query.page}
-          pages={query.pages}
-          total={query.total}
-          pageSize={query.pageSize}
-          onPageChange={query.setPage}
-          onPageSizeChange={query.setPageSize}
-        />
+        {listTab === 'data' ? (
+          <>
+            <MeasurementTable
+              rows={query.items}
+              loading={query.loading}
+              onDelete={(row) => setPendingDelete(row)}
+              onShowRevisions={(row) => setRevisionTarget(row)}
+            />
+            <Pagination
+              page={query.page}
+              pages={query.pages}
+              total={query.total}
+              pageSize={query.pageSize}
+              onPageChange={query.setPage}
+              onPageSizeChange={query.setPageSize}
+            />
+          </>
+        ) : (
+          <RevisionListPanel filters={query.filters} />
+        )}
       </SectionCard>
+
+      <RevisionHistoryModal
+        measurement={revisionTarget}
+        onClose={() => setRevisionTarget(null)}
+      />
 
       <ConfirmDialog
         open={Boolean(pendingDelete)}

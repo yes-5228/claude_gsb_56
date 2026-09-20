@@ -50,6 +50,7 @@ def create_entries():
     recorder = validator.text("recorder", "录入人", required=False, max_length=64)
     remark = validator.text("remark", "备注", required=False, max_length=500)
     overwrite = validator.boolean("overwrite", False)
+    overwrite_reason = validator.text("overwrite_reason", "覆盖原因", required=False, max_length=500)
     validator.raise_if_invalid("录入信息不合法")
 
     entries = list_payload("entries", data)
@@ -62,6 +63,7 @@ def create_entries():
         recorder=recorder,
         remark=remark,
         overwrite=bool(overwrite),
+        overwrite_reason=overwrite_reason,
     ), 201
 
 
@@ -88,6 +90,20 @@ def export_measurements():
         ("备注", "remark"),
     ]
     return csv_response(rows, columns, "monitoring_data")
+
+
+@bp.get("/revisions")
+def list_revisions():
+    """覆盖版本全局回看: 按覆盖时间倒序, 支持监测点/因子/操作人/时间范围过滤."""
+    query = measurement_service.revision_query(request.args)
+    return paginate_query(query, lambda row: row.to_dict(include_measurement=True))
+
+
+@bp.get("/<int:measurement_id>/revisions")
+def measurement_revisions(measurement_id):
+    """单条监测数据的覆盖版本历史 (按版本号倒序)."""
+    measurement = measurement_service.get_measurement(measurement_id)
+    return measurement_service.measurement_revisions(measurement)
 
 
 @bp.get("/<int:measurement_id>")

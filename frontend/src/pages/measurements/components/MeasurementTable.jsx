@@ -3,7 +3,7 @@ import Tag from '../../../components/common/Tag.jsx'
 import { DATA_SOURCE_TONE } from '../../../constants/index.js'
 import { formatDateTime, formatNumber, formatRatio } from '../../../utils/format.js'
 
-export default function MeasurementTable({ rows, loading, onDelete }) {
+export default function MeasurementTable({ rows, loading, onDelete, onShowRevisions }) {
   const columns = [
     { key: 'measured_at', title: '监测时间', className: 'cell-nowrap', render: (row) => formatDateTime(row.measured_at) },
     {
@@ -51,10 +51,23 @@ export default function MeasurementTable({ rows, loading, onDelete }) {
       key: 'actions',
       title: '操作',
       align: 'right',
+      className: 'cell-nowrap',
       render: (row) => (
-        <button type="button" className="btn btn-sm btn-danger" onClick={() => onDelete(row)}>
-          删除
-        </button>
+        <div className="inline" style={{ justifyContent: 'flex-end', flexWrap: 'nowrap' }}>
+          {row.version > 1 ? (
+            <button
+              type="button"
+              className="btn btn-sm"
+              title="查看覆盖版本历史"
+              onClick={() => onShowRevisions?.(row)}
+            >
+              版本 v{row.version}
+            </button>
+          ) : null}
+          <button type="button" className="btn btn-sm btn-danger" onClick={() => onDelete(row)}>
+            删除
+          </button>
+        </div>
       )
     }
   ]

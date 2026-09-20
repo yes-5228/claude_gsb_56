@@ -3,12 +3,14 @@ import axios from 'axios'
 const baseURL = import.meta.env.VITE_API_BASE || '/api'
 
 export class ApiError extends Error {
-  constructor(message, { status, fields, code } = {}) {
+  constructor(message, { status, fields, code, payload } = {}) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.fields = fields || {}
     this.code = code
+    // 后端错误响应的完整载荷 (如重复数据差异对比、版本冲突明细)
+    this.payload = payload || null
   }
 }
 
@@ -23,7 +25,8 @@ http.interceptors.response.use(
         new ApiError(payload.message || '请求失败', {
           status: error.response.status,
           fields: payload.fields,
-          code: payload.code
+          code: payload.code,
+          payload
         })
       )
     }

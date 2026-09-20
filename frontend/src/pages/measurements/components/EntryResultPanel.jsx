@@ -162,8 +162,8 @@ export default function EntryResultPanel({ result, summary, onClose }) {
 
         {payload.duplicates?.length ? (
           <Alert tone="warning">
-            以下因子在该时刻已存在数据, 未写入: {payload.duplicates.map((item) => item.pollutant_label).join(', ')}
-            。如需修正请勾选“覆盖同一时刻已有数据”后重新提交。
+            以下因子在该时刻已存在数据, 暂未写入: {payload.duplicates.map((item) => item.pollutant_label).join(', ')}
+            。请在弹出的差异对比中选择跳过或覆盖。
           </Alert>
         ) : null}
 

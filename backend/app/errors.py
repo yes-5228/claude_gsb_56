@@ -7,17 +7,19 @@ from .extensions import db
 class ApiError(Exception):
     """Business level error rendered as a JSON payload."""
 
-    def __init__(self, message, status_code=400, code="BAD_REQUEST", fields=None):
+    def __init__(self, message, status_code=400, code="BAD_REQUEST", fields=None, extra=None):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
         self.code = code
         self.fields = fields or {}
+        self.extra = extra or {}
 
     def to_dict(self):
         payload = {"message": self.message, "code": self.code}
         if self.fields:
             payload["fields"] = self.fields
+        payload.update(self.extra)
         return payload
 
 
@@ -32,8 +34,20 @@ class ValidationError(ApiError):
 
 
 class ConflictError(ApiError):
-    def __init__(self, message="数据冲突"):
-        super().__init__(message, status_code=409, code="CONFLICT")
+    def __init__(self, message="数据冲突", extra=None):
+        super().__init__(message, status_code=409, code="CONFLICT", extra=extra)
+
+
+class VersionConflictError(ApiError):
+    """同一记录被他人先行覆盖: 期望版本号已过期, 本次覆盖被拒绝."""
+
+    def __init__(self, message="数据已被他人更新", conflicts=None):
+        super().__init__(
+            message,
+            status_code=409,
+            code="VERSION_CONFLICT",
+            extra={"conflicts": conflicts or []},
+        )
 
 
 def register_error_handlers(app):

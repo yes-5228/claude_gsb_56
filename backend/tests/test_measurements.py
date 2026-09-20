@@ -39,6 +39,7 @@ def test_overwrite_updates_record_and_clears_exceedance(client, station, entry_p
         json=entry_payload(
             station.id,
             overwrite=True,
+            overwrite_reason="设备校准后复测修正",
             entries=[{"pollutant": "SO2", "value": 120.0}],
         ),
     )
